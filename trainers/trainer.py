@@ -1,11 +1,20 @@
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from utils.logger import get_logger
-from utils.metrics import MetricTracker, accuracy
+from utils.metrics import MetricTracker, accuracy, MetricTrackerResult
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class DataPoint:
+    train_accuracy: float
+    val_top1_accuracy: float
+    val_top3_accuracy: float
 
 
 class Trainer:
@@ -33,11 +42,11 @@ class Trainer:
             + ", ".join([f"{k}: {v}" for k, v in optimizer.defaults.items()])
         )
 
-    def train_one_epoch(self, loader: DataLoader):
+    def train_one_epoch(self, loader: DataLoader) -> MetricTrackerResult:
         self.model.train()
-        total_loss = 0
         num_batches = len(loader)
 
+        tracker = MetricTracker("loss", "accuracy")
         logger.debug(f"Starting training epoch with {num_batches} batches")
 
         for batch_idx, (x, y) in enumerate(loader):
@@ -49,27 +58,34 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
+            (batch_accuracy,) = accuracy(out, y)
             batch_loss = loss.item()
-            total_loss += batch_loss
-
-            if batch_idx % 100 == 0 or batch_idx == num_batches - 1:
-                logger.debug(f"Batch [{batch_idx}/{num_batches}] loss={batch_loss:.4f}")
-
-        avg_loss = total_loss / num_batches
+            tracker.update(loss=batch_loss, accuracy=batch_accuracy)
+        results = tracker.compute()
+        avg_loss = results["loss"]
         logger.debug(f"Epoch complete: avg_loss={avg_loss:.4f}")
 
-        return avg_loss
+        return results
 
-    def fit(self, train_loader: DataLoader, epochs):
+    def fit(self, train_loader: DataLoader, val_loader: DataLoader, epochs):
         logger.info(f"Starting training for {epochs} epochs")
         logger.debug("Setting model to training mode")
         self.model.train()
 
+        accuracies: list[DataPoint] = []
         for epoch in range(epochs):
             logger.info(f"Epoch {epoch + 1}/{epochs} started")
 
-            loss = self.train_one_epoch(train_loader)
-
+            epoch_train_results = self.train_one_epoch(train_loader)
+            loss = epoch_train_results["loss"]
+            epoch_val_results = self.validate(val_loader)
+            accuracies.append(
+                DataPoint(
+                    train_accuracy=epoch_train_results["accuracy"],
+                    val_top1_accuracy=epoch_val_results["top1_accuracy"],
+                    val_top3_accuracy=epoch_val_results["top3_accuracy"],
+                )
+            )
             log_msg = f"Epoch {epoch + 1}/{epochs} complete: avg_loss={loss:.6f}"
 
             if loss != loss:
@@ -84,12 +100,13 @@ class Trainer:
                 logger.info(log_msg)
 
         logger.info("Training completed successfully")
+        return accuracies
 
-    def validate(self, dataloader: DataLoader):
+    def validate(self, dataloader: DataLoader) -> MetricTrackerResult:
         logger.debug("Setting model to evaluation mode")
         self.model.eval()
 
-        tracker = MetricTracker("loss", "top1_accuracy", "top5_accuracy")
+        tracker = MetricTracker("loss", "top1_accuracy", "top3_accuracy")
 
         with torch.no_grad():
             for features, labels in dataloader:
@@ -99,16 +116,16 @@ class Trainer:
                 pred = self.model(features)
                 loss = self.criterion(pred, labels)
 
-                acc1, acc5 = accuracy(pred, labels, topk=(1, 5))
+                acc1, acc3 = accuracy(pred, labels, topk=(1, 3))
 
-                tracker.update(loss=loss.item(), top1_accuracy=acc1, top5_accuracy=acc5)
+                tracker.update(loss=loss.item(), top1_accuracy=acc1, top3_accuracy=acc3)
 
         results = tracker.compute()
 
         logger.info(
             f"Validation/Test Error: "
             f"Top-1 Accuracy: {(100 * results['top1_accuracy']):>0.1f}%, "
-            f"Top-5 Accuracy: {(100 * results['top5_accuracy']):>0.1f}%, "
+            f"Top-3 Accuracy: {(100 * results['top3_accuracy']):>0.1f}%, "
             f"Avg loss: {results['loss']:>8f}"
         )
 

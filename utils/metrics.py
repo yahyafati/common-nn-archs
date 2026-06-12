@@ -1,5 +1,3 @@
-from typing import Dict
-
 import torch
 
 
@@ -24,7 +22,7 @@ class AverageMeter:
         return self.sum / self.count if self.count > 0 else 0.0
 
 
-def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)):
+def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)) -> list[float]:
     r"""
     Computes top-k accuracy
 
@@ -49,6 +47,9 @@ def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)):
         return res
 
 
+MetricTrackerResult = dict[str, float]
+
+
 class MetricTracker:
     """
     Generic metric container
@@ -63,7 +64,7 @@ class MetricTracker:
                 raise KeyError(f"Metric '{k}' not initialized")
             self.meters[k].update(v)
 
-    def compute(self) -> Dict[str, float]:
+    def compute(self) -> MetricTrackerResult:
         return {k: meter.avg for k, meter in self.meters.items()}
 
     def reset(self):
