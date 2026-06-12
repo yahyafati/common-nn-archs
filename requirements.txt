@@ -6,3 +6,5 @@ torchinfo
 tqdm
 matplotlib
 black
+
+requests

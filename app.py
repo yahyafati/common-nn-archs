@@ -1,14 +1,13 @@
 import argparse
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
+from runner.application import Application
+from runner.types import Args
+from utils.logger import get_logger
 
-from models.registry import get_model
-from trainers.trainer import Trainer
+logger = get_logger()
 
 
-def parse_args():
+def parse_args() -> Args:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -17,32 +16,19 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-3)
 
-    return parser.parse_args()
+    parsed = parser.parse_args()
+    return Args(
+        arch=parsed.arch,
+        epochs=parsed.epochs,
+        lr=parsed.lr,
+    )
 
 
 def main():
     args = parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    archs = [a.strip() for a in args.arch.split(",")]
-
-    for arch in archs:
-        print(f"\n=== Training {arch} ===")
-
-        model = get_model(arch, num_classes=10)
-
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
-        criterion = nn.CrossEntropyLoss()
-
-        trainer = Trainer(model, optimizer, criterion, device)
-
-        # dummy loader for now
-        dummy_loader = [
-            (torch.randn(8, 3, 224, 224), torch.randint(0, 10, (8,))) for _ in range(10)
-        ]
-
-        trainer.fit(dummy_loader, args.epochs)
+    app = Application(args)
+    app.run()
 
 
 if __name__ == "__main__":
