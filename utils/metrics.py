@@ -1,3 +1,5 @@
+from typing import Dict
+
 import torch
 
 
@@ -61,7 +63,7 @@ class MetricTracker:
                 raise KeyError(f"Metric '{k}' not initialized")
             self.meters[k].update(v)
 
-    def compute(self):
+    def compute(self) -> Dict[str, float]:
         return {k: meter.avg for k, meter in self.meters.items()}
 
     def reset(self):

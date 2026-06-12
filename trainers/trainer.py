@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from utils.logger import get_logger
+from utils.metrics import MetricTracker, accuracy
 
 logger = get_logger(__name__)
 
@@ -26,6 +27,10 @@ class Trainer:
             f"model={model.__class__.__name__}, "
             f"optimizer={optimizer.__class__.__name__}, "
             f"criterion={criterion.__class__.__name__}"
+        )
+        logger.info(
+            "Optimizer Defaults: "
+            + ", ".join([f"{k}: {v}" for k, v in optimizer.defaults.items()])
         )
 
     def train_one_epoch(self, loader: DataLoader):
@@ -55,8 +60,10 @@ class Trainer:
 
         return avg_loss
 
-    def fit(self, train_loader, epochs):
+    def fit(self, train_loader: DataLoader, epochs):
         logger.info(f"Starting training for {epochs} epochs")
+        logger.debug("Setting model to training mode")
+        self.model.train()
 
         for epoch in range(epochs):
             logger.info(f"Epoch {epoch + 1}/{epochs} started")
@@ -77,3 +84,32 @@ class Trainer:
                 logger.info(log_msg)
 
         logger.info("Training completed successfully")
+
+    def validate(self, dataloader: DataLoader):
+        logger.debug("Setting model to evaluation mode")
+        self.model.eval()
+
+        tracker = MetricTracker("loss", "top1_accuracy", "top5_accuracy")
+
+        with torch.no_grad():
+            for features, labels in dataloader:
+                features = features.to(self.device)
+                labels = labels.to(self.device)
+
+                pred = self.model(features)
+                loss = self.criterion(pred, labels)
+
+                acc1, acc5 = accuracy(pred, labels, topk=(1, 5))
+
+                tracker.update(loss=loss.item(), top1_accuracy=acc1, top5_accuracy=acc5)
+
+        results = tracker.compute()
+
+        logger.info(
+            f"Validation/Test Error: "
+            f"Top-1 Accuracy: {(100 * results['top1_accuracy']):>0.1f}%, "
+            f"Top-5 Accuracy: {(100 * results['top5_accuracy']):>0.1f}%, "
+            f"Avg loss: {results['loss']:>8f}"
+        )
+
+        return results
